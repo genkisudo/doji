@@ -42,11 +42,17 @@
 - **What it does:** Day-by-day breakdown of closed trades and new traders (first-ever trade), plus running cumulative totals. Suitable for a line chart showing platform growth since launch.
 - **Columns:** `day`, `trades`, `new_traders`, `cumulative_trades`, `cumulative_traders`
 
+### Q5 — Fee Wallet USDC Inflows (Platform Revenue)
+- **File:** `queries/q5_fee_wallet_inflows.sql`
+- **Dune ID:** (not yet saved)
+- **What it does:** Daily USDC inflows to the fee wallet (`0xF5D8…6c1`) — gross platform revenue from trading fees. Outputs a per-day time-series with daily and cumulative fee totals, suitable for both a summary card and a revenue chart.
+- **Columns:** `day`, `fee_tx_count`, `daily_fee_usdc`, `unique_fee_payers`, `cumulative_fee_usdc`, `cumulative_fee_txns`
+
 ---
 
 ## Design Notes
 
-All four queries are **decode-independent** — they run entirely on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` events. No ABI decoding is needed.
+All five queries are **decode-independent** — they run entirely on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` events. No ABI decoding is needed.
 
 Once the DojiTradeNFT contract (`0xcac4…1ff1`) or the main trading contract is decoded on Dune, Q2/Q3/Q4 can be enriched with the `TradeMinted` event fields from the contract:
 

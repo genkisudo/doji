@@ -58,6 +58,7 @@ All queries are **decode-independent** — they run on raw `nft.transfers` and `
 | `queries/q2_unique_traders.sql` | 7717347 | Unique traders via NFT mint recipients |
 | `queries/q3_headline_metrics.sql` | 7717396 | Single-row platform summary (trades + deposits) |
 | `queries/q4_daily_trades_growth.sql` | 7717399 | Daily trades & cumulative trader growth |
+| `queries/q5_fee_wallet_inflows.sql` | — | Fee wallet USDC inflows (platform revenue) |
 
 ## DuneSQL Notes (from `sql_guide.md`)
 

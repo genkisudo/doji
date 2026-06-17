@@ -30,6 +30,7 @@ WITH trades AS (
     WHERE blockchain = 'arbitrum'
       AND contract_address = 0xcac4cbbcb921512dbd327b23ab5771125e7c1ff1
       AND "from" = 0x0000000000000000000000000000000000000000  -- mints only
+      AND to != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc    -- exclude internal testing wallet
       AND block_time >= TIMESTAMP '2026-05-01'
 ),
 deposits AS (
@@ -42,8 +43,10 @@ deposits AS (
     FROM erc20_arbitrum.evt_Transfer
     WHERE "to" = 0x98D4077A5C448529d20D233d36780e3A99dB541E   -- Reserve A only (trader-facing; see Q1)
       AND contract_address = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+      AND "from" != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc  -- exclude internal testing wallet
       AND evt_block_time >= TIMESTAMP '2026-05-01'
 )
+
 SELECT
     t.total_trades,
     t.unique_traders,

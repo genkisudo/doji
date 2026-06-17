@@ -38,5 +38,6 @@ SELECT
 FROM erc20_arbitrum.evt_Transfer
 WHERE "to" = 0x98D4077A5C448529d20D233d36780e3A99dB541E   -- Reserve A only (trader-facing)
   AND contract_address = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831  -- real USDC only
+  AND "from" != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc           -- exclude internal testing wallet
   AND evt_block_time >= TIMESTAMP '2026-05-01'   -- partition-pruned lower bound
   AND evt_block_time <  TIMESTAMP '2027-01-01'   -- exclusive upper bound (2026 only)

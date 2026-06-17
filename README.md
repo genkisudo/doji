@@ -13,6 +13,7 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 | Q3 | [`queries/q3_headline_metrics.sql`](queries/q3_headline_metrics.sql) | [7717396](https://dune.com/queries/7717396) | Single-row platform summary |
 | Q4 | [`queries/q4_daily_trades_growth.sql`](queries/q4_daily_trades_growth.sql) | [7717399](https://dune.com/queries/7717399) | Daily trades & cumulative trader growth |
 | Q5 | [`queries/q5_fee_wallet_inflows.sql`](queries/q5_fee_wallet_inflows.sql) | — | Fee wallet USDC inflows (platform revenue) |
+| Q6 | [`queries/q6_wallet_breakdown.sql`](queries/q6_wallet_breakdown.sql) | [7742479](https://dune.com/queries/7742479) | Per-wallet scorecard — paste any address, get PnL, win rate, leverage, accounts, pairs |
 
 ---
 
@@ -39,7 +40,9 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 
 **Revenue** is measured as USDC inflows to the fee wallet — no decoding required.
 
-All queries are decode-independent and partition-pruned (filtered from `2026-05-01`).
+**Per-trade detail** (Q6 onward) uses the decoded `dojifunded_arbitrum.dojitradenft_evt_trademinted` table, available since 2026-06-17. It carries `realizedPnl`, `feesPaid`, `positionSizeUsd`, `leverage`, `symbol`, `accountId`, `isLong`, and more — one row per closed trade.
+
+Q1–Q5 are decode-independent. All queries are partition-pruned (filtered from `2026-05-01`).
 
 ---
 
@@ -54,18 +57,6 @@ dune query run-sql --sql "$(cat queries/q3_headline_metrics.sql)" -o json
 # Update a saved query
 dune query update 7717333 --sql "$(cat queries/q1_usdc_deposits_2026.sql)" -o json
 ```
-
----
-
-## Upcoming
-
-Once the `DojiTradeNFT` contract is decoded on Dune, `TradeMinted` events will unlock:
-
-- PnL distributions and win rates
-- Per-symbol trade volume
-- Leverage heatmaps
-- Slippage analysis (requested vs exit price)
-- Per-trade fee breakdown
 
 ---
 

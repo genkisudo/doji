@@ -34,6 +34,7 @@ WITH fee_transfers AS (
            ON tk.contract_address = t.contract_address
           AND tk.blockchain = 'arbitrum'
     WHERE t."to" = 0xF5D86eA2457d8b408E6e63affBF0E40E9AB646c1
+      AND t."from" != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc  -- exclude internal testing wallet
       AND t.evt_block_time >= TIMESTAMP '2026-05-01'
       AND t.evt_block_time <  TIMESTAMP '2027-01-01'
 ),

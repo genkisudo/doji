@@ -1,6 +1,6 @@
 # DojiFunded On-Chain Analytics — Query Summary
 
-**Chain:** Arbitrum | **As of:** 2026-06-13
+**Chain:** Arbitrum | **As of:** 2026-06-17
 
 ## Key Addresses
 
@@ -45,20 +45,27 @@
 ### Q5 — Fee Wallet USDC Inflows (Platform Revenue)
 - **File:** `queries/q5_fee_wallet_inflows.sql`
 - **Dune ID:** (not yet saved)
-- **What it does:** Daily USDC inflows to the fee wallet (`0xF5D8…6c1`) — gross platform revenue from trading fees. Outputs a per-day time-series with daily and cumulative fee totals, suitable for both a summary card and a revenue chart.
-- **Columns:** `day`, `fee_tx_count`, `daily_fee_usdc`, `unique_fee_payers`, `cumulative_fee_usdc`, `cumulative_fee_txns`
+- **What it does:** Daily inflows of any token to the fee wallet (`0xF5D8…6c1`) — gross platform revenue from trading fees. Outputs a per-day time-series with daily and cumulative totals per token, suitable for both a summary card and a revenue chart. Fees arrive in a custom token (not USDC); unknown tokens fall back to their raw contract address.
+- **Columns:** `day`, `token`, `contract_address`, `fee_tx_count`, `daily_amount`, `cumulative_amount`
+
+### Q6 — Per-Wallet Trader Scorecard (parameterized)
+- **File:** `queries/q6_wallet_breakdown.sql`
+- **Dune ID:** [7742479](https://dune.com/queries/7742479)
+- **Source:** `dojifunded_arbitrum.dojitradenft_evt_trademinted` (decoded, available from 2026-06-17)
+- **Parameter:** `{{wallet_address}}` — paste any `0x` trader address in the Dune UI
+- **What it does:** Single-row scorecard for a trader: realized PnL, fees, net PnL, trade count, number of accounts, pairs traded, win rate, total volume, average and max leverage, long/short split, best and worst trade, and first/last trade dates.
+- **Columns:** `trader`, `total_trades`, `accounts`, `pairs_traded`, `realized_pnl_usd`, `total_fees_usd`, `net_pnl_usd`, `avg_pnl_per_trade_usd`, `best_trade_usd`, `worst_trade_usd`, `winning_trades`, `losing_trades`, `win_rate_pct`, `total_volume_usd`, `avg_position_usd`, `avg_leverage_x`, `max_leverage_x`, `long_trades`, `short_trades`, `first_trade`, `last_trade`, `active_days`
 
 ---
 
 ## Design Notes
 
-All five queries are **decode-independent** — they run entirely on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` events. No ABI decoding is needed.
+Q1–Q5 are **decode-independent** — they run entirely on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` events. No ABI decoding is needed for these.
 
-Once the DojiTradeNFT contract (`0xcac4…1ff1`) or the main trading contract is decoded on Dune, Q2/Q3/Q4 can be enriched with the `TradeMinted` event fields from the contract:
+**The DojiTradeNFT contract is now decoded on Dune** (as of 2026-06-17) under the namespace `dojifunded_arbitrum`. Available tables:
 
-```
-realizedPnl, positionSizeUsd, leverage, symbol, entryPrice, exitPrice,
-requestedPrice, feesPaid, fundingPayment, breachedRule, accountId
-```
+- `dojifunded_arbitrum.dojitradenft_evt_trademinted` — one row per closed trade, with full metadata
+- `dojifunded_arbitrum.dojitradenft_evt_transfer` — ERC-721 transfer events
+- `dojifunded_arbitrum.dojitradenft_call_minttrade` — raw mint call data
 
-This would unlock win rates, PnL distributions, leverage heatmaps, per-symbol volumes, slippage (requestedPrice vs exitPrice), and total fees collected — fully on-brand with the Explorer's "public verifiability" story.
+Q6 uses `dojitradenft_evt_trademinted` to power per-wallet breakdowns. Future queries can build PnL distributions, win rates, leverage heatmaps, per-symbol volumes, slippage analysis (requested vs exit price), and breached-rule frequency — all fields are available in the decoded event.

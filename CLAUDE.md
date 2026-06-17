@@ -38,16 +38,18 @@ Always use `-o json` — it returns more detail than the default text format. Us
 | DojiTradeNFT contract (DOJI-TRADE) | `0xcac4cbbcb921512dbd327b23ab5771125e7c1ff1` |
 | Real USDC (Circle native, 6 dec) | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
 | Spoof "UṢDC" (dotted-S, exclude always) | `0xc09978783365361538c50c1036f3958509886418` |
+| Internal testing wallet (exclude always) | `0xf60ffefeea868d0a77d5b055df07c18022c7f7bc` |
 
 ## Query Architecture
 
-All queries are **decode-independent** — they run on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` without needing the main trading contract's ABI to be decoded on Dune.
+Older queries (Q1–Q5) are **decode-independent** — they run on raw `nft.transfers` and `erc20_arbitrum.evt_Transfer` without needing the ABI.
+
+**The DojiTradeNFT contract is now decoded on Dune** as `dojifunded_arbitrum.dojitradenft_evt_trademinted`. Q6 and future queries use this table for rich per-trade data: `realizedPnl`, `positionSizeUsd`, `leverage`, `symbol`, `feesPaid`, `accountId`, `tradeId`, `trader`, `isLong`, `exitPrice`.
 
 **How traders are identified:**
-- A closed trade mints one `DojiTradeNFT` to the trader's address (`from = 0x0` in `nft.transfers`). Distinct mint recipients = unique traders.
-- Traders fund accounts by depositing real USDC to the deposit reserve. Use this as a secondary signal or funnel metric.
-
-**The DojiTradeNFT contract is not yet decoded on Dune.** Once it is, queries can be enriched using the `TradeMinted` event, which carries: `realizedPnl`, `positionSizeUsd`, `leverage`, `symbol`, `entryPrice`, `exitPrice`, `requestedPrice`, `feesPaid`, `fundingPayment`, `breachedRule`, `accountId`.
+- Older queries: a closed trade mints one `DojiTradeNFT` to the trader (`from = 0x0` in `nft.transfers`). Distinct recipients = unique traders.
+- Newer queries: use `trader` column directly from `dojitradenft_evt_trademinted`.
+- Traders fund accounts by depositing real USDC to the deposit reserve (secondary/funnel metric).
 
 **All queries filter from `2026-05-01`** (platform launch was 2026-05-25; the filter is set early to leave headroom).
 
@@ -60,6 +62,19 @@ All queries are **decode-independent** — they run on raw `nft.transfers` and `
 | `queries/q3_headline_metrics.sql` | 7717396 | Single-row platform summary (trades + deposits) |
 | `queries/q4_daily_trades_growth.sql` | 7717399 | Daily trades & cumulative trader growth |
 | `queries/q5_fee_wallet_inflows.sql` | — | Fee wallet USDC inflows (platform revenue) |
+| `queries/q6_wallet_breakdown.sql` | 7742479 | Per-wallet scorecard — PnL, win rate, leverage, pairs, accounts (parameterized: `{{wallet_address}}`) |
+
+**Note on parameterized queries:** Dune's CLI (`dune query create`) does not support declaring parameters. Use the REST API to create or update queries with `{{param}}` placeholders:
+
+```bash
+python3 -c "
+import json, urllib.request, os
+sql = open('queries/q6_wallet_breakdown.sql').read()
+payload = {'name': 'Query name', 'query_sql': sql, 'parameters': [{'key': 'wallet_address', 'type': 'text', 'value': '0x...'}]}
+req = urllib.request.Request('https://api.dune.com/api/v1/query', data=json.dumps(payload).encode(), headers={'X-Dune-API-Key': os.environ['DUNE_API_KEY'], 'Content-Type': 'application/json'}, method='POST')
+print(urllib.request.urlopen(req).read().decode())
+"
+```
 
 ## DuneSQL Notes (from `sql_guide.md`)
 
@@ -72,9 +87,5 @@ All queries are **decode-independent** — they run on raw `nft.transfers` and `
 
 - `doji_docs.md` — DojiFunded platform documentation (Explorer, Terminal, payouts)
 - `doji_tradenft.sol` — DojiTradeNFT smart contract source; defines `TradeMetadata` struct and decimal conventions (`PRICE_DECIMALS=8`, `USD_DECIMALS=6`, `QTY_DECIMALS=18`, `LEVERAGE_DECIMALS=2`)
-- `doji_queries_summary.md` — Summary of all 4 saved queries with live result snapshots
+- `doji_queries_summary.md` — Summary of all saved queries with live result snapshots
 - `sql_guide.md` — Dune's official DuneSQL efficiency guide
-
-### Notes
-
-The smart contract was submited for decoding on Dune, should be ready soon. 

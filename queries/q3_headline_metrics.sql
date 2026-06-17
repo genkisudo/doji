@@ -15,7 +15,8 @@
 --
 -- Addresses
 --   Trade NFT   : 0xcac4cbbcb921512dbd327b23ab5771125e7c1ff1
---   Reserve     : 0x98D4077A5C448529d20D233d36780e3A99dB541E
+--   Reserve A   : 0x98D4077A5C448529d20D233d36780e3A99dB541E
+--   Reserve B   : 0x1016bC039A4aB6008d38EAD798b4E29361a2D6eA
 --   Real USDC   : 0xaf88d065e77c8cC2239327C5EDb3A432268e5831  (dotted-S spoof excluded)
 --
 -- Note          : all-time totals from 2026-05-01 (partition-pruned lower bound).
@@ -39,7 +40,7 @@ deposits AS (
         SUM(value / 1e6)       AS total_usdc_deposited,   -- 6-decimal base units → USDC
         COUNT(DISTINCT "from") AS unique_depositors
     FROM erc20_arbitrum.evt_Transfer
-    WHERE "to" = 0x98D4077A5C448529d20D233d36780e3A99dB541E
+    WHERE "to" = 0x98D4077A5C448529d20D233d36780e3A99dB541E   -- Reserve A only (trader-facing; see Q1)
       AND contract_address = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
       AND evt_block_time >= TIMESTAMP '2026-05-01'
 )

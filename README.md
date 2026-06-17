@@ -20,7 +20,8 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 
 | Role | Address |
 |------|---------|
-| Deposit reserve | `0x98D4077A5C448529d20D233d36780e3A99dB541E` |
+| Deposit reserve A | `0x98D4077A5C448529d20D233d36780e3A99dB541E` |
+| Deposit reserve B | `0x1016bC039A4aB6008d38EAD798b4E29361a2D6eA` |
 | Fee wallet | `0xF5D86eA2457d8b408E6e63affBF0E40E9AB646c1` |
 | DojiTradeNFT contract | `0xcac4cbbcb921512dbd327b23ab5771125e7c1ff1` |
 | Real USDC (Circle, 6 dec) | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |

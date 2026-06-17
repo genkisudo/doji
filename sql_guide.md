@@ -1,0 +1,269 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.dune.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Writing Efficient Queries
+
+> Get the most out of DuneSQL by writing efficient queries.
+
+This guide provides practical do's and don'ts specifically tailored to DuneSQL and Dune's architecture, allowing you to optimize credit spend.
+
+## Key Principles
+
+Dune's query engine is optimized for blockchain data analysis with time-partitioned tables and columnar storage.
+Understanding the [DuneSQL architecture](/query-engine/dunesql-architecture) will help you write queries that execute faster and consume fewer resources.
+
+## ✅ DO's: Query Optimization Best Practices
+
+### 1. Leverage Time-Based Partitioning
+
+Dune partitions most tables by `block_date` or by `block_time`
+
+Check on the data explorer (left-side panel) to see which fields are used as partitions.
+Always include time filters to enable partition pruning.
+
+**Cross-chain tables:** Large cross-chain tables like `tokens.transfers`, `dex.trades`, and `evms.erc20_evt_transfers` are most often also partitioned by `blockchain` in addition to time. Wherever possible, specify the blockchain filter along with time filters to dramatically reduce the amount of data scanned.
+
+```sql theme={null}
+-- ✅ GOOD: Filters by block_date to enable partition pruning
+SELECT 
+    hash,
+    "from",
+    "to",
+    value
+FROM base.transactions
+WHERE block_date >= TIMESTAMP '2025-09-01 00:00:00'
+  AND block_date < TIMESTAMP '2025-10-02 00:00:00'
+  AND "to" = 0x827922686190790b37229fd06084350E74485b72
+
+-- ✅ EXCELLENT: Filters by both blockchain and time for cross-chain tables
+SELECT 
+    block_time,
+    tx_hash,
+    "from",
+    "to",
+    amount_usd
+FROM dex.trades
+WHERE blockchain = 'ethereum'
+  AND block_time >= TIMESTAMP '2024-10-01'
+  AND block_time < TIMESTAMP '2024-11-01'
+```
+
+### 2. Select Only Required Columns
+
+Specify only the columns you need. Dune's columnar storage makes this especially effective.
+
+```sql theme={null}
+-- ✅ GOOD: Selects only necessary columns
+SELECT 
+    evt_block_time,
+    "from",
+    "to", 
+    value
+FROM erc20_ethereum.evt_Transfer
+WHERE contract_address = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+  AND evt_block_time >= NOW() - INTERVAL '7' DAY
+```
+
+### 3. Use Efficient JOIN Strategies
+
+Put time filters in the ON clause and join on indexed columns when possible.
+
+```sql theme={null}
+-- ✅ GOOD: Efficient join with time filter in ON clause
+SELECT 
+    t.hash,
+    t.block_time,
+    l.topic0,
+    l.data
+FROM ethereum.transactions t
+INNER JOIN ethereum.logs l 
+    ON t.hash = l.tx_hash
+    AND t.block_date = l.block_date
+    AND l.block_date >= TIMESTAMP '2024-10-01'
+    AND l.block_date < TIMESTAMP '2024-10-02'
+WHERE t."to" = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+    AND t.block_date >= TIMESTAMP '2024-10-01'
+    AND t.block_date < TIMESTAMP '2024-10-02'
+```
+
+### 4. Use CTEs for Complex Logic
+
+Break complex queries into readable Common Table Expressions.
+
+```sql theme={null}
+-- ✅ GOOD: Using CTEs for better performance and readability
+WITH daily_volumes AS (
+    SELECT 
+        block_date as trade_date,
+        SUM(amount_usd) as daily_volume
+    FROM dex.trades
+    WHERE blockchain = 'ethereum'
+      AND block_date >= TIMESTAMP '2024-09-01'     
+      AND block_date < TIMESTAMP '2024-10-01'
+    GROUP BY block_date
+),
+volume_metrics AS (
+    SELECT 
+        trade_date,
+        daily_volume,
+        AVG(daily_volume) OVER (
+            ORDER BY trade_date 
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) as rolling_7day_avg
+    FROM daily_volumes
+)
+SELECT * FROM volume_metrics
+ORDER BY trade_date DESC
+```
+
+### 5. Use LIMIT with Large Result Sets
+
+Always use LIMIT when you don't need all results, especially for exploratory queries.
+
+```sql theme={null}
+-- ✅ GOOD: Using LIMIT for large result sets
+SELECT 
+    hash,
+    block_time,
+    gas_used,
+    gas_price
+FROM ethereum.transactions
+WHERE block_time >= TIMESTAMP '2024-10-01'
+ORDER BY gas_price DESC
+LIMIT 1000
+```
+
+### Use Curated Data Tables
+
+Leverage Dune's [curated tables](https://docs.dune.com/data-catalog/overview) which are pre-computed and optimized rather than use raw logs and traces.
+
+### Use Materialized Views
+
+[Materialized views](https://docs.dune.com/query-engine/materialized-views) are a way to store the results of a query in a table that can be queried like any other table.
+This is useful when you have a query that takes a long time to run, as you can re-use the results without having to re-execute your whole query.
+
+### Use Incremental Queries for Recurring Workloads
+
+For scheduled queries or dashboards that refresh regularly, [Incremental Queries](/query-engine/incremental-queries) can reduce costs by up to 100x by only processing new data since your last run.
+
+Instead of rescanning years of historical data on every refresh, incremental queries:
+
+* Load your previous results automatically
+* Query only the new data since your last checkpoint
+* Combine old + new results efficiently
+
+```sql theme={null}
+WITH prev AS (
+    SELECT * FROM TABLE(previous.query.result(
+        schema => DESCRIPTOR(day TIMESTAMP(3), tx_count BIGINT)
+    ))
+),
+checkpoint AS (
+    SELECT COALESCE(MAX(day), TIMESTAMP '2015-07-30') - INTERVAL '1' DAY AS cutoff FROM prev
+)
+-- Keep old data
+SELECT day, tx_count FROM prev WHERE day < (SELECT cutoff FROM checkpoint)
+UNION ALL
+-- Query only new data
+SELECT date_trunc('day', block_time) AS day, COUNT(*) AS tx_count
+FROM ethereum.transactions
+WHERE block_time >= (SELECT cutoff FROM checkpoint)
+GROUP BY 1
+```
+
+This is ideal for daily aggregations, hourly metrics, and any time-series analysis that runs on a schedule. See the [full documentation](/query-engine/incremental-queries) for more patterns and examples.
+
+### Minimize Redundant Lookups in Automated Pipelines
+
+In automated pipelines (dbt model runs, scheduled workflows), minimize redundant metadata and schema lookups such as repeated `DESCRIBE`, `SHOW`, and `ref`/`source` resolution. Each of these occupies the query engine and consumes credits, so reusing or caching results where possible keeps automated runs lean.
+
+## Query Performance Troubleshooting
+
+* Monitor query execution time in the Dune interface
+* Check the query plan for full table scans (run EXPLAIN ANALYZE YOUR\_QUERY)
+* Consider query complexity vs. result value trade-offs
+
+## ❌ DON'Ts: Query Anti-Patterns to Avoid
+
+### 1. **DON'T** Use `SELECT *` on Large Tables
+
+Avoid selecting all columns, especially on transaction and log tables.
+
+```sql theme={null}
+-- ❌ BAD: Select all columns unnecessarily
+SELECT * 
+FROM ethereum.transactions
+WHERE block_time >= TIMESTAMP '2024-10-01'
+
+-- ✅ GOOD: Select only needed columns
+SELECT hash, from_address, to_address, value
+FROM ethereum.transactions  
+WHERE block_time >= TIMESTAMP '2024-10-01'
+```
+
+### 2. **DON'T** Create Unnecessary Subqueries
+
+Avoid nested subqueries when JOINs or window functions work better.
+
+```sql theme={null}
+-- ❌ BAD: Inefficient correlated subquery
+SELECT 
+    b1.number,
+    b1.gas_used,
+    (
+        SELECT AVG(b2.gas_used)
+        FROM ethereum.blocks b2
+        WHERE b2.time >= TIMESTAMP '2024-10-01'
+          AND b2.number <= b1.number
+          AND b2.number > b1.number - 100
+    ) AS avg_100_blocks
+FROM ethereum.blocks b1
+WHERE b1.time >= TIMESTAMP '2024-10-01';
+
+-- ✅ GOOD: Use window functions instead
+WITH gas_used AS (
+    SELECT 
+        number,
+        gas_used,
+        AVG(gas_used) OVER (
+            ORDER BY time
+            ROWS BETWEEN 99 PRECEDING AND CURRENT ROW
+        ) as avg_100_blocks
+    FROM ethereum.blocks
+    WHERE time >= TIMESTAMP '2024-10-01'
+) 
+SELECT 
+    number,
+    gas_used,
+    avg_100_blocks
+FROM gas_used
+```
+
+### 3. **DON'T** Use ORDER BY Without LIMIT on Large Results
+
+Sorting large result sets is expensive.
+
+```sql theme={null}
+-- ❌ BAD: Ordering large result set without limit
+SELECT hash, gas_price
+FROM ethereum.transactions
+WHERE block_time >= TIMESTAMP '2024-10-01'
+ORDER BY gas_price DESC
+
+-- ✅ GOOD: Add LIMIT when ordering
+SELECT hash, gas_price
+FROM ethereum.transactions
+WHERE block_time >= TIMESTAMP '2024-10-01'
+ORDER BY gas_price DESC
+LIMIT 10000
+```
+
+## Summary
+
+Efficient DuneSQL queries on Dune require understanding the platform's time-partitioned architecture. Focus on:
+
+1. **Time filtering** with time fields for partition pruning
+2. **Column selection** to leverage columnar storage
+3. **Strategic joins** with proper filter placement
+4. **Avoiding anti-patterns** that prevent optimizations

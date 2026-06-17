@@ -97,15 +97,34 @@ total AS (
     SELECT COUNT(*) AS n FROM joined   -- all classified accounts (deaths + survivors)
 )
 SELECT
-    g.cause_of_death,
+    -- Rule name with emoji so the top killer is visually obvious
+    CASE g.cause_of_death
+        WHEN 'daily_drawdown'          THEN '📉 daily_drawdown'
+        WHEN 'single_trade_loss'       THEN '💸 single_trade_loss'
+        WHEN 'daily_loss_limit'        THEN '🚫 daily_loss_limit'
+        WHEN 'static_drawdown'         THEN '🕳️ static_drawdown'
+        WHEN 'minimum_trade_duration'  THEN '⏱️ min_trade_duration'
+        ELSE                                '🟢 survived / active'
+    END                                                  AS cause_of_death,
+
+    -- Account counts (pure numbers — sortable)
     g.accounts,
-    ROUND(100.0 * g.accounts / t.n, 1)        AS pct_of_accounts,
-    ROUND(g.avg_trades_alive, 1)              AS avg_trades_alive,
-    ROUND(g.avg_days_alive, 1)                AS avg_days_alive,
-    ROUND(g.avg_realized_pnl_usd, 2)          AS avg_realized_pnl_usd,
-    ROUND(g.avg_fatal_leverage_x, 2)          AS avg_fatal_leverage_x,
-    s.fatal_symbol                            AS deadliest_symbol
+    ROUND(100.0 * g.accounts / t.n, 1)                  AS pct_of_accounts,
+
+    -- Lifespan averages (pure numbers)
+    ROUND(g.avg_trades_alive, 1)                         AS avg_trades_alive,
+    ROUND(g.avg_days_alive,   1)                         AS avg_days_alive,
+
+    -- PnL at death (pure number; format as $ in Dune column settings)
+    ROUND(g.avg_realized_pnl_usd, 2)                     AS avg_pnl_at_death_usd,
+
+    -- Leverage on the fatal trade (pure number)
+    ROUND(g.avg_fatal_leverage_x, 2)                     AS avg_fatal_lev_x,
+
+    -- Deadliest pair: the symbol that appears most on fatal trades for this rule
+    '⚡ ' || s.fatal_symbol                              AS deadliest_symbol
+
 FROM agg g
-JOIN sym s ON s.cause_of_death = g.cause_of_death AND s.rk = 1
+JOIN sym   s ON s.cause_of_death = g.cause_of_death AND s.rk = 1
 CROSS JOIN total t
 ORDER BY g.accounts DESC

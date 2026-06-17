@@ -63,6 +63,10 @@ Older queries (Q1–Q5) are **decode-independent** — they run on raw `nft.tran
 | `queries/q4_daily_trades_growth.sql` | 7717399 | Daily trades & cumulative trader growth |
 | `queries/q5_fee_wallet_inflows.sql` | — | Fee wallet USDC inflows (platform revenue) |
 | `queries/q6_wallet_breakdown.sql` | 7742479 | Per-wallet scorecard — PnL, win rate, leverage, pairs, accounts (parameterized: `{{wallet_address}}`) |
+| `queries/q7_account_autopsy.sql` | 7742886 | "Breach DNA" — one row per account, cause of death + lifespan + fatal trade |
+| `queries/q8_breach_leaderboard.sql` | 7742887 | "Breach DNA" — deadliest rules ranked (accounts killed, avg lifespan, fatal leverage) |
+
+**Note on the `breachedRule` field (and the full trade struct):** The `TradeMinted` *event* only emits a subset of `TradeMetadata` and **drops `breachedRule`** (plus `openedAt`, `closedAt`, `fundingPayment`, `requestedPrice`, etc.). The full struct survives only as the JSON calldata `data` of the decoded **call** table `dojifunded_arbitrum.dojitradenft_call_minttrade`. Parse it with `json_extract_scalar(data, '$.field')`. Q7/Q8 source from this call table; Q6 uses the lighter event table. The `breachedRule` sentinel for "no breach" is the string `'NA'`. The PayoutVault is also decoded (`dojifunded_arbitrum.payoutvault_evt_payoutexecuted`), though it has 0 payouts so far.
 
 **Note on parameterized queries:** Dune's CLI (`dune query create`) does not support declaring parameters. Use the REST API to create or update queries with `{{param}}` placeholders:
 

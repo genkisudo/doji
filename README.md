@@ -14,6 +14,8 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 | Q4 | [`queries/q4_daily_trades_growth.sql`](queries/q4_daily_trades_growth.sql) | [7717399](https://dune.com/queries/7717399) | Daily trades & cumulative trader growth |
 | Q5 | [`queries/q5_fee_wallet_inflows.sql`](queries/q5_fee_wallet_inflows.sql) | — | Fee wallet USDC inflows (platform revenue) |
 | Q6 | [`queries/q6_wallet_breakdown.sql`](queries/q6_wallet_breakdown.sql) | [7742479](https://dune.com/queries/7742479) | Per-wallet scorecard — paste any address, get PnL, win rate, leverage, accounts, pairs |
+| Q7 | [`queries/q7_account_autopsy.sql`](queries/q7_account_autopsy.sql) | [7742886](https://dune.com/queries/7742886) | **Breach DNA** — per-account autopsy: cause of death, lifespan, fatal trade, PnL bled out |
+| Q8 | [`queries/q8_breach_leaderboard.sql`](queries/q8_breach_leaderboard.sql) | [7742887](https://dune.com/queries/7742887) | **Breach DNA** — deadliest rules ranked: accounts killed, avg lifespan, fatal leverage, deadliest pair |
 
 ---
 
@@ -40,7 +42,9 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 
 **Revenue** is measured as USDC inflows to the fee wallet — no decoding required.
 
-**Per-trade detail** (Q6 onward) uses the decoded `dojifunded_arbitrum.dojitradenft_evt_trademinted` table, available since 2026-06-17. It carries `realizedPnl`, `feesPaid`, `positionSizeUsd`, `leverage`, `symbol`, `accountId`, `isLong`, and more — one row per closed trade.
+**Per-trade detail** (Q6) uses the decoded `dojifunded_arbitrum.dojitradenft_evt_trademinted` event table, available since 2026-06-17. It carries `realizedPnl`, `feesPaid`, `positionSizeUsd`, `leverage`, `symbol`, `accountId`, `isLong`, and more — one row per closed trade.
+
+**Breach DNA** (Q7/Q8) analyzes what kills trading accounts. The `breachedRule` field — and the rest of the full trade struct — is *not* in the event; it lives only as JSON calldata in the decoded **call** table `dojifunded_arbitrum.dojitradenft_call_minttrade`. An account's cause of death is the breach rule on its last-ever trade. `daily_drawdown` is the dominant killer (~55% of accounts).
 
 Q1–Q5 are decode-independent. All queries are partition-pruned (filtered from `2026-05-01`).
 

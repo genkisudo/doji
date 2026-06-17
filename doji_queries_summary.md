@@ -56,6 +56,28 @@
 - **What it does:** Single-row scorecard for a trader: realized PnL, fees, net PnL, trade count, number of accounts, pairs traded, win rate, total volume, average and max leverage, long/short split, best and worst trade, and first/last trade dates.
 - **Columns:** `trader`, `total_trades`, `accounts`, `pairs_traded`, `realized_pnl_usd`, `total_fees_usd`, `net_pnl_usd`, `avg_pnl_per_trade_usd`, `best_trade_usd`, `worst_trade_usd`, `winning_trades`, `losing_trades`, `win_rate_pct`, `total_volume_usd`, `avg_position_usd`, `avg_leverage_x`, `max_leverage_x`, `long_trades`, `short_trades`, `first_trade`, `last_trade`, `active_days`
 
+### Q7 — Account Autopsy ("Breach DNA", per-account)
+- **File:** `queries/q7_account_autopsy.sql`
+- **Dune ID:** [7742886](https://dune.com/queries/7742886)
+- **Source:** `dojifunded_arbitrum.dojitradenft_call_minttrade` (decoded CALL — see Breach DNA note below)
+- **What it does:** One row per trading account: its lifespan and cause of death. An account's killer is the `breachedRule` on its last-ever trade; soft mid-life breaches are survived. Includes the fatal trade, PnL bled out, leverage habits, and a future-proof `received_payout` flag.
+- **Columns:** `account_id`, `trader`, `received_payout`, `status` (killed/active/dormant), `killed_by`, `total_trades`, `soft_breaches_survived`, `realized_pnl_usd`, `net_pnl_usd`, `total_fees_usd`, `max_leverage_x`, `avg_leverage_x`, `distinct_symbols`, `fatal_symbol`, `fatal_side`, `fatal_leverage_x`, `fatal_size_usd`, `fatal_pnl_usd`, `days_alive`, `first_trade_at`, `last_trade_at`
+- **Live result (2026-06-17):** 156 accounts · **113 killed**, 29 active, 14 dormant · biggest blow-up −$2,881 (JTO-PERP, 5×, dead same day in 1 trade)
+
+### Q8 — Breach Leaderboard ("Breach DNA", aggregate)
+- **File:** `queries/q8_breach_leaderboard.sql`
+- **Dune ID:** [7742887](https://dune.com/queries/7742887)
+- **Source:** `dojifunded_arbitrum.dojitradenft_call_minttrade` (decoded CALL)
+- **What it does:** One row per cause of death. Ranks which risk rules kill the most accounts and profiles each: avg lifespan, avg PnL at death, avg leverage on the fatal trade, and the deadliest pair.
+- **Columns:** `cause_of_death`, `accounts`, `pct_of_accounts`, `avg_trades_alive`, `avg_days_alive`, `avg_realized_pnl_usd`, `avg_fatal_leverage_x`, `deadliest_symbol`
+- **Live result (2026-06-17):** `daily_drawdown` **86 accounts (55%)**, avg −$478 at death · survived/active 43 (28%, +$4) · `single_trade_loss` 11 · `static_drawdown` 1 (slow death: 6 trades / 5 days, −$1,502)
+
+---
+
+## Breach DNA note (Q7/Q8) — the `breachedRule` gotcha
+
+The `TradeMinted` **event** only emits a subset of the `TradeMetadata` struct and **drops `breachedRule`** (plus `openedAt`, `closedAt`, `fundingPayment`, `requestedPrice`, and the TP/SL fields). The full struct survives only as the JSON calldata `data` of the decoded **call** table `dojifunded_arbitrum.dojitradenft_call_minttrade`. Parse it with `json_extract_scalar(data, '$.field')`. The `breachedRule` sentinel for "no breach" is the string `'NA'`. Eval-vs-funded is **not** on-chain, so Q7/Q8 cover all accounts and use a `received_payout` flag (from the decoded `payoutvault_evt_payoutexecuted`, currently 0 payouts) as a funded/success proxy.
+
 ---
 
 ## Design Notes
@@ -64,8 +86,9 @@ Q1–Q5 are **decode-independent** — they run entirely on raw `nft.transfers` 
 
 **The DojiTradeNFT contract is now decoded on Dune** (as of 2026-06-17) under the namespace `dojifunded_arbitrum`. Available tables:
 
-- `dojifunded_arbitrum.dojitradenft_evt_trademinted` — one row per closed trade, with full metadata
+- `dojifunded_arbitrum.dojitradenft_evt_trademinted` — one row per closed trade (subset of the struct; no `breachedRule`)
 - `dojifunded_arbitrum.dojitradenft_evt_transfer` — ERC-721 transfer events
-- `dojifunded_arbitrum.dojitradenft_call_minttrade` — raw mint call data
+- `dojifunded_arbitrum.dojitradenft_call_minttrade` — **full** trade struct as JSON calldata (`breachedRule`, `openedAt`/`closedAt`, `fundingPayment`, prices, TP/SL)
+- `dojifunded_arbitrum.payoutvault_evt_payoutexecuted` — trader payouts (0 so far)
 
-Q6 uses `dojitradenft_evt_trademinted` to power per-wallet breakdowns. Future queries can build PnL distributions, win rates, leverage heatmaps, per-symbol volumes, slippage analysis (requested vs exit price), and breached-rule frequency — all fields are available in the decoded event.
+Q6 uses `dojitradenft_evt_trademinted` for per-wallet breakdowns; Q7/Q8 use `dojitradenft_call_minttrade` for breach analysis. Still open to build: PnL distributions, leverage heatmaps, per-symbol volumes, slippage (requestedPrice vs exitPrice), and cohort retention.

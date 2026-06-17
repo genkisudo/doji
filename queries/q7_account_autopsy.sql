@@ -88,34 +88,65 @@ agg AS (
     GROUP BY account_id, trader
 )
 SELECT
-    a.account_id,
-    a.trader,
-    (p.recipient IS NOT NULL)                                      AS received_payout,
+    -- Account status: visual badge first so it reads instantly in a table
     CASE
-        WHEN f.breached_rule <> 'NA'                 THEN 'killed'
-        WHEN r.now_close - a.last_close <= 259200    THEN 'active'   -- last trade within 3 days
-        ELSE 'dormant'
+        WHEN f.breached_rule <> 'NA'              THEN '💀 killed'
+        WHEN r.now_close - a.last_close <= 259200 THEN '🟢 active'
+        ELSE                                           '😴 dormant'
     END                                                            AS status,
-    CASE WHEN f.breached_rule <> 'NA' THEN f.breached_rule END     AS killed_by,
+
+    -- Cause of death: emoji per rule so rows are scannable at a glance
+    CASE f.breached_rule
+        WHEN 'daily_drawdown'        THEN '📉 daily_drawdown'
+        WHEN 'single_trade_loss'     THEN '💸 single_trade_loss'
+        WHEN 'daily_loss_limit'      THEN '🚫 daily_loss_limit'
+        WHEN 'static_drawdown'       THEN '🕳️ static_drawdown'
+        WHEN 'minimum_trade_duration'THEN '⏱️ min_trade_duration'
+        ELSE NULL
+    END                                                            AS killed_by,
+
+    -- Trader wallet: truncated with emoji (42-char address: 0x + 40 hex)
+    '👤 ' || concat(
+        substr(cast(a.trader AS varchar), 1, 6), '...',
+        substr(cast(a.trader AS varchar), 39, 4)
+    )                                                              AS trader,
+
+    -- Account ID: first 8 chars of the UUID is enough to identify a row
+    concat(substr(a.account_id, 1, 8), '...')                     AS account,
+
+    -- Payout flag: clean tick or dash (all false until first funded payout)
+    CASE WHEN p.recipient IS NOT NULL THEN '✅ paid out' ELSE '—' END
+                                                                   AS payout,
+
+    -- Lifespan counters (pure numbers — sortable)
     a.total_trades,
     a.total_breaches - CASE WHEN f.breached_rule <> 'NA' THEN 1 ELSE 0 END
-                                                                  AS soft_breaches_survived,
-    a.realized_pnl_usd,
-    a.net_pnl_usd,
-    a.total_fees_usd,
-    a.max_leverage_x,
-    a.avg_leverage_x,
-    a.distinct_symbols,
-    -- Fatal trade detail (the account's last trade)
+                                                                   AS soft_breaches,
+    DATE_DIFF('day', FROM_UNIXTIME(a.first_close), FROM_UNIXTIME(a.last_close))
+                                                                   AS days_alive,
+
+    -- PnL metrics (pure numbers — sortable; format as $ in Dune column settings)
+    ROUND(a.realized_pnl_usd, 2)                                   AS realized_pnl_usd,
+    ROUND(a.net_pnl_usd,      2)                                   AS net_pnl_usd,
+    ROUND(a.total_fees_usd,   2)                                   AS fees_usd,
+
+    -- Leverage (pure numbers)
+    ROUND(a.avg_leverage_x, 2)                                     AS avg_lev_x,
+    ROUND(a.max_leverage_x, 2)                                     AS max_lev_x,
+    a.distinct_symbols                                             AS pairs,
+
+    -- Fatal trade detail: the exact trade that killed (or last trade if alive)
+    CASE WHEN f.is_long = 'true' THEN '📈 LONG' ELSE '📉 SHORT' END
+                                                                   AS fatal_side,
     f.symbol                                                       AS fatal_symbol,
-    CASE WHEN f.is_long = 'true' THEN 'LONG' ELSE 'SHORT' END      AS fatal_side,
-    f.lev_raw  / 1e2                                               AS fatal_leverage_x,
-    f.size_raw / 1e6                                               AS fatal_size_usd,
-    f.pnl_raw  / 1e6                                               AS fatal_pnl_usd,
-    -- Lifespan
-    DATE_DIFF('day', FROM_UNIXTIME(a.first_close), FROM_UNIXTIME(a.last_close)) AS days_alive,
+    ROUND(f.lev_raw  / 1e2, 2)                                     AS fatal_lev_x,
+    ROUND(f.size_raw / 1e6, 2)                                     AS fatal_size_usd,
+    ROUND(f.pnl_raw  / 1e6, 2)                                     AS fatal_pnl_usd,
+
+    -- Timestamps (native — Dune handles timezone display)
     FROM_UNIXTIME(a.first_close)                                   AS first_trade_at,
     FROM_UNIXTIME(a.last_close)                                    AS last_trade_at
+
 FROM agg a
 JOIN ranked f ON f.account_id = a.account_id AND f.rn_last = 1
 CROSS JOIN ref r

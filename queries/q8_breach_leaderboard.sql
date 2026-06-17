@@ -11,9 +11,10 @@
 -- ⚠ breachedRule lives only in the CALL table's JSON `data` (the TradeMinted
 --   event drops it). See Q7 header for the full explanation.
 --
--- Cause of death = the breachedRule on each account's chronologically last trade
---   (closedAt, tiebroken by mint tokenId). 'NA' last trade => relabelled
---   'survived / still active'. Soft breaches mid-life are not counted as deaths.
+-- Cause of death = the breachedRule on each account's chronologically last trade,
+--   pulled in one GROUP BY pass via max_by(breachedRule, ROW(closedAt, tokenId)).
+--   'NA' (no terminal breach) is relabelled '🟢 survived / active' in the final
+--   SELECT. Soft breaches mid-life are not counted as deaths.
 --
 -- Decimals: realizedPnl = 1e6 (USD); leverage = 1e2 (200 = 2.0x);
 --   openedAt/closedAt = unix seconds. Internal testing wallet excluded.
@@ -32,45 +33,21 @@ WITH trades AS (
       AND call_block_time >= TIMESTAMP '2026-05-01'                -- partition pruning
       AND "to" != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc       -- exclude internal testing wallet
 ),
-ranked AS (
-    SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY account_id
-                           ORDER BY closed_at DESC, token_id DESC) AS rn_last
-    FROM trades
-),
 acct AS (
-    -- Per-account lifespan stats (whole life, not just the fatal trade).
+    -- One GROUP BY pass per account: whole-life stats AND the fatal-trade fields,
+    -- via max_by(field, ROW(closed_at, token_id)) for the last trade — no self-join
+    -- or window rank. 'NA' (no breach) is relabelled in the final SELECT's CASE.
     SELECT
         account_id,
         COUNT(*)            AS trades_alive,
         SUM(pnl_raw) / 1e6  AS realized_pnl_usd,
-        MIN(closed_at)      AS first_close,
-        MAX(closed_at)      AS last_close
+        DATE_DIFF('day', FROM_UNIXTIME(MIN(closed_at)),
+                         FROM_UNIXTIME(MAX(closed_at)))  AS days_alive,
+        max_by(breached_rule, ROW(closed_at, token_id))  AS cause_of_death,
+        max_by(symbol,        ROW(closed_at, token_id))  AS fatal_symbol,
+        max_by(lev_raw,       ROW(closed_at, token_id))  AS fatal_lev_raw
     FROM trades
     GROUP BY account_id
-),
-fatal AS (
-    -- One row per account: the terminal trade = cause of death + fatal leverage/symbol.
-    SELECT
-        account_id,
-        CASE WHEN breached_rule = 'NA' THEN 'survived / still active'
-             ELSE breached_rule END AS cause_of_death,
-        symbol  AS fatal_symbol,
-        lev_raw AS fatal_lev_raw
-    FROM ranked
-    WHERE rn_last = 1
-),
-joined AS (
-    -- One row per account, carrying its cause of death and lifespan.
-    SELECT
-        f.cause_of_death,
-        f.fatal_symbol,
-        f.fatal_lev_raw,
-        a.trades_alive,
-        a.realized_pnl_usd,
-        DATE_DIFF('day', FROM_UNIXTIME(a.first_close), FROM_UNIXTIME(a.last_close)) AS days_alive
-    FROM fatal f
-    JOIN acct  a ON a.account_id = f.account_id
 ),
 agg AS (
     SELECT
@@ -80,7 +57,7 @@ agg AS (
         AVG(days_alive)           AS avg_days_alive,
         AVG(realized_pnl_usd)     AS avg_realized_pnl_usd,
         AVG(fatal_lev_raw) / 1e2  AS avg_fatal_leverage_x
-    FROM joined
+    FROM acct
     GROUP BY cause_of_death
 ),
 sym AS (
@@ -90,7 +67,7 @@ sym AS (
         fatal_symbol,
         ROW_NUMBER() OVER (PARTITION BY cause_of_death
                            ORDER BY COUNT(*) DESC, fatal_symbol) AS rk
-    FROM joined
+    FROM acct
     GROUP BY cause_of_death, fatal_symbol
 )
 SELECT

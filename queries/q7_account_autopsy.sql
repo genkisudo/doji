@@ -14,8 +14,10 @@
 --   the JSON calldata `data` of mintTrade(address to, TradeMetadata data). We
 --   parse it with json_extract_scalar(data, '$.field').
 --
--- Cause of death: the `breachedRule` on the account's chronologically LAST trade
---   (ordered by closedAt, tiebroken by the globally-monotonic mint tokenId).
+-- Cause of death: the `breachedRule` on the account's chronologically LAST trade,
+--   extracted in one GROUP BY pass via max_by(field, ROW(closedAt, tokenId)) —
+--   ROW() gives lexicographic (closedAt, then tokenId) ordering, so ties on
+--   closedAt fall back to the globally-monotonic mint tokenId.
 --   'NA' on the last trade => not killed by a rule (active or voluntarily idle).
 --   Soft rules (e.g. minimum_trade_duration) often appear mid-life and are
 --   survived; only the terminal breach is the killer.
@@ -54,20 +56,17 @@ WITH trades AS (
       AND call_block_time >= TIMESTAMP '2026-05-01'                -- partition pruning
       AND "to" != 0xf60ffefeea868d0a77d5b055df07c18022c7f7bc       -- exclude internal testing wallet
 ),
-ranked AS (
-    -- rn_last = 1 marks each account's final closed trade = its moment of death.
-    SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY account_id
-                           ORDER BY closed_at DESC, token_id DESC) AS rn_last
-    FROM trades
-),
 payouts AS (
     -- Traders who have received a payout (future-proof; 0 rows as of 2026-06-17).
     SELECT DISTINCT recipient
     FROM dojifunded_arbitrum.payoutvault_evt_payoutexecuted
     WHERE evt_block_time >= TIMESTAMP '2026-05-01'
 ),
-agg_base AS (
+agg AS (
+    -- One GROUP BY pass does everything: whole-life aggregates AND the fatal-trade
+    -- fields via max_by(field, ROW(closed_at, token_id)) — no self-join, no window
+    -- rank. MAX(MAX(closed_at)) OVER () layers a window over the aggregate to get
+    -- the platform-wide latest close for the active/dormant cutoff.
     SELECT
         account_id,
         trader,
@@ -80,26 +79,28 @@ agg_base AS (
         COUNT(DISTINCT symbol)                         AS distinct_symbols,
         COUNT(*) FILTER (WHERE breached_rule <> 'NA')  AS total_breaches,
         MIN(closed_at)                                 AS first_close,
-        MAX(closed_at)                                 AS last_close
+        MAX(closed_at)                                 AS last_close,
+        MAX(MAX(closed_at)) OVER ()                    AS global_last_close,
+        -- Fatal trade = the account's last trade (closed_at, then token_id).
+        max_by(breached_rule, ROW(closed_at, token_id)) AS fatal_rule,
+        max_by(symbol,        ROW(closed_at, token_id)) AS fatal_symbol,
+        max_by(is_long,       ROW(closed_at, token_id)) AS fatal_is_long,
+        max_by(lev_raw,       ROW(closed_at, token_id)) AS fatal_lev_raw,
+        max_by(size_raw,      ROW(closed_at, token_id)) AS fatal_size_raw,
+        max_by(pnl_raw,       ROW(closed_at, token_id)) AS fatal_pnl_raw
     FROM trades
     GROUP BY account_id, trader
-),
-agg AS (
-    -- Window over the grouped result to get the platform-wide latest close,
-    -- used to classify accounts as active vs dormant without a CROSS JOIN.
-    SELECT *, MAX(last_close) OVER () AS global_last_close
-    FROM agg_base
 )
 SELECT
     -- Account status: visual badge first so it reads instantly in a table
     CASE
-        WHEN f.breached_rule <> 'NA'              THEN '💀 killed'
+        WHEN a.fatal_rule <> 'NA'                         THEN '💀 killed'
         WHEN a.global_last_close - a.last_close <= 259200 THEN '🟢 active'
-        ELSE                                           '😴 dormant'
+        ELSE                                                   '😴 dormant'
     END                                                            AS status,
 
     -- Cause of death: emoji per rule so rows are scannable at a glance
-    CASE f.breached_rule
+    CASE a.fatal_rule
         WHEN 'daily_drawdown'        THEN '📉 daily_drawdown'
         WHEN 'single_trade_loss'     THEN '💸 single_trade_loss'
         WHEN 'daily_loss_limit'      THEN '🚫 daily_loss_limit'
@@ -123,7 +124,7 @@ SELECT
 
     -- Lifespan counters (pure numbers — sortable)
     a.total_trades,
-    a.total_breaches - CASE WHEN f.breached_rule <> 'NA' THEN 1 ELSE 0 END
+    a.total_breaches - CASE WHEN a.fatal_rule <> 'NA' THEN 1 ELSE 0 END
                                                                    AS soft_breaches,
     DATE_DIFF('day', FROM_UNIXTIME(a.first_close), FROM_UNIXTIME(a.last_close))
                                                                    AS days_alive,
@@ -139,18 +140,17 @@ SELECT
     a.distinct_symbols                                             AS pairs,
 
     -- Fatal trade detail: the exact trade that killed (or last trade if alive)
-    CASE WHEN f.is_long = 'true' THEN '📈 LONG' ELSE '📉 SHORT' END
+    CASE WHEN a.fatal_is_long = 'true' THEN '📈 LONG' ELSE '📉 SHORT' END
                                                                    AS fatal_side,
-    f.symbol                                                       AS fatal_symbol,
-    ROUND(f.lev_raw  / 1e2, 2)                                     AS fatal_lev_x,
-    ROUND(f.size_raw / 1e6, 2)                                     AS fatal_size_usd,
-    ROUND(f.pnl_raw  / 1e6, 2)                                     AS fatal_pnl_usd,
+    a.fatal_symbol                                                 AS fatal_symbol,
+    ROUND(a.fatal_lev_raw  / 1e2, 2)                               AS fatal_lev_x,
+    ROUND(a.fatal_size_raw / 1e6, 2)                               AS fatal_size_usd,
+    ROUND(a.fatal_pnl_raw  / 1e6, 2)                               AS fatal_pnl_usd,
 
     -- Timestamps (native — Dune handles timezone display)
     FROM_UNIXTIME(a.first_close)                                   AS first_trade_at,
     FROM_UNIXTIME(a.last_close)                                    AS last_trade_at
 
 FROM agg a
-JOIN ranked f ON f.account_id = a.account_id AND f.rn_last = 1
 LEFT JOIN payouts p ON p.recipient = a.trader
 ORDER BY a.realized_pnl_usd ASC   -- biggest blow-ups first

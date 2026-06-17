@@ -67,10 +67,7 @@ payouts AS (
     FROM dojifunded_arbitrum.payoutvault_evt_payoutexecuted
     WHERE evt_block_time >= TIMESTAMP '2026-05-01'
 ),
-ref AS (
-    SELECT MAX(closed_at) AS now_close FROM trades   -- latest close = "now"
-),
-agg AS (
+agg_base AS (
     SELECT
         account_id,
         trader,
@@ -86,12 +83,18 @@ agg AS (
         MAX(closed_at)                                 AS last_close
     FROM trades
     GROUP BY account_id, trader
+),
+agg AS (
+    -- Window over the grouped result to get the platform-wide latest close,
+    -- used to classify accounts as active vs dormant without a CROSS JOIN.
+    SELECT *, MAX(last_close) OVER () AS global_last_close
+    FROM agg_base
 )
 SELECT
     -- Account status: visual badge first so it reads instantly in a table
     CASE
         WHEN f.breached_rule <> 'NA'              THEN '💀 killed'
-        WHEN r.now_close - a.last_close <= 259200 THEN '🟢 active'
+        WHEN a.global_last_close - a.last_close <= 259200 THEN '🟢 active'
         ELSE                                           '😴 dormant'
     END                                                            AS status,
 
@@ -149,6 +152,5 @@ SELECT
 
 FROM agg a
 JOIN ranked f ON f.account_id = a.account_id AND f.rn_last = 1
-CROSS JOIN ref r
 LEFT JOIN payouts p ON p.recipient = a.trader
 ORDER BY a.realized_pnl_usd ASC   -- biggest blow-ups first

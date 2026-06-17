@@ -92,9 +92,6 @@ sym AS (
                            ORDER BY COUNT(*) DESC, fatal_symbol) AS rk
     FROM joined
     GROUP BY cause_of_death, fatal_symbol
-),
-total AS (
-    SELECT COUNT(*) AS n FROM joined   -- all classified accounts (deaths + survivors)
 )
 SELECT
     -- Rule name with emoji so the top killer is visually obvious
@@ -109,7 +106,8 @@ SELECT
 
     -- Account counts (pure numbers — sortable)
     g.accounts,
-    ROUND(100.0 * g.accounts / t.n, 1)                  AS pct_of_accounts,
+    -- SUM OVER () totals all rows in the result — no CROSS JOIN needed.
+    ROUND(100.0 * g.accounts / SUM(g.accounts) OVER (), 1) AS pct_of_accounts,
 
     -- Lifespan averages (pure numbers)
     ROUND(g.avg_trades_alive, 1)                         AS avg_trades_alive,
@@ -125,6 +123,5 @@ SELECT
     '⚡ ' || s.fatal_symbol                              AS deadliest_symbol
 
 FROM agg g
-JOIN sym   s ON s.cause_of_death = g.cause_of_death AND s.rk = 1
-CROSS JOIN total t
+JOIN sym s ON s.cause_of_death = g.cause_of_death AND s.rk = 1
 ORDER BY g.accounts DESC

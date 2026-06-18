@@ -10,7 +10,7 @@ On-chain analytics workspace for [DojiFunded](https://dojifunded.com) — a dece
 |---|------|---------|-------------|
 | Q1 | [`queries/q1_usdc_deposits_2026.sql`](queries/q1_usdc_deposits_2026.sql) | [7717333](https://dune.com/queries/7717333) | USDC deposits to the reserve (2026) |
 | Q2 | [`queries/q2_unique_traders.sql`](queries/q2_unique_traders.sql) | [7717347](https://dune.com/queries/7717347) | Unique traders via NFT mint recipients |
-| Q3 | [`queries/q3_headline_metrics.sql`](queries/q3_headline_metrics.sql) | [7717396](https://dune.com/queries/7717396) | Single-row platform summary |
+| Q3 | [`queries/q3_headline_metrics.sql`](queries/q3_headline_metrics.sql) | [7717396](https://dune.com/queries/7717396) | Single-row platform summary (trades, traders, accounts, deposits) |
 | Q4 | [`queries/q4_daily_trades_growth.sql`](queries/q4_daily_trades_growth.sql) | [7717399](https://dune.com/queries/7717399) | Daily trades & cumulative trader growth |
 | Q5 | [`queries/q5_fee_wallet_inflows.sql`](queries/q5_fee_wallet_inflows.sql) | — | Fee wallet USDC inflows (platform revenue) |
 | Q6 | [`queries/q6_wallet_breakdown.sql`](queries/q6_wallet_breakdown.sql) | [7742479](https://dune.com/queries/7742479) | Per-wallet scorecard — paste any address, get PnL, win rate, leverage, accounts, pairs |

@@ -59,7 +59,7 @@ Older queries (Q1–Q5) are **decode-independent** — they run on raw `nft.tran
 |---|---|---|
 | `queries/q1_usdc_deposits_2026.sql` | 7717333 | USDC deposits to reserve in 2026 |
 | `queries/q2_unique_traders.sql` | 7717347 | Unique traders via NFT mint recipients |
-| `queries/q3_headline_metrics.sql` | 7717396 | Single-row platform summary (trades + deposits) |
+| `queries/q3_headline_metrics.sql` | 7717396 | Single-row platform summary (trades + traders + accounts + deposits) |
 | `queries/q4_daily_trades_growth.sql` | 7717399 | Daily trades & cumulative trader growth |
 | `queries/q5_fee_wallet_inflows.sql` | — | Fee wallet USDC inflows (platform revenue) |
 | `queries/q6_wallet_breakdown.sql` | 7742479 | Per-wallet scorecard — PnL, win rate, leverage, pairs, accounts (parameterized: `{{wallet_address}}`) |

@@ -91,4 +91,11 @@ Q1–Q5 are **decode-independent** — they run entirely on raw `nft.transfers` 
 - `dojifunded_arbitrum.dojitradenft_call_minttrade` — **full** trade struct as JSON calldata (`breachedRule`, `openedAt`/`closedAt`, `fundingPayment`, prices, TP/SL)
 - `dojifunded_arbitrum.payoutvault_evt_payoutexecuted` — trader payouts (0 so far)
 
-Q6 uses `dojitradenft_evt_trademinted` for per-wallet breakdowns; Q7/Q8 use `dojitradenft_call_minttrade` for breach analysis. Still open to build: PnL distributions, leverage heatmaps, per-symbol volumes, slippage (requestedPrice vs exitPrice), and cohort retention.
+Q6 uses `dojitradenft_evt_trademinted` for per-wallet breakdowns; Q7/Q8/Q9 use `dojitradenft_call_minttrade` for breach and duration analysis. Still open to build: PnL distributions, leverage heatmaps, per-symbol volumes, slippage (requestedPrice vs exitPrice), and cohort retention.
+
+### Q9 — "Diamond Hands" vs. Scalpers (Duration Psychology)
+- **File:** `queries/q9_duration_psychology.sql`
+- **Dune ID:** (save with `dune query create`)
+- **Source:** `dojifunded_arbitrum.dojitradenft_call_minttrade` (decoded CALL)
+- **What it does:** Analyzes trader psychology by categorizing trades based on hold duration (Scalp, Day, Swing). Compares win rates, average PnL, and the "Hope Ratio" (loser-to-winner hold time) per cohort.
+- **Columns:** `trading_style`, `total_trades`, `win_rate_pct`, `avg_pnl_usd`, `total_pnl_usd`, `avg_winner_hold_minutes`, `avg_loser_hold_minutes`, `loser_to_winner_hold_ratio`
